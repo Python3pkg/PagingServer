@@ -1,13 +1,13 @@
 #!/usr/bin/env python2
 # -*- coding: utf-8 -*-
-from __future__ import print_function
+
 
 import itertools as it, operator as op, functools as ft
 from os.path import join, exists, isfile, expanduser, dirname
 from contextlib import contextmanager, closing
 from collections import deque, OrderedDict
 from heapq import heappush, heappop, heappushpop
-import ConfigParser as configparser
+import configparser as configparser
 import os, sys, io, re, types, ctypes, threading
 import time, signal, logging, inspect
 
@@ -73,9 +73,9 @@ def err_report_wrapper(func=None, fatal=None):
             try: return func(*args, **kws)
             except Exception as err:
                 if raven_client: raven_client.captureException()
-                if fatal is None and func.func_name == '__init__': raise # implicit
+                if fatal is None and func.__name__ == '__init__': raise # implicit
                 elif fatal: raise
-                if log: log.exception('ERROR (%s): %s', func.func_name, err)
+                if log: log.exception('ERROR (%s): %s', func.__name__, err)
         return _wrapper
     return _err_report_wrapper if func is None else _err_report_wrapper(func)
 
@@ -88,7 +88,7 @@ def get_logger(logger=None, root=['__main__', 'paging']):
     if logger is None:
         frame = inspect.stack()[1][0]
         name = inspect.getargvalues(frame).locals.get('self')
-        if isinstance(root, types.StringTypes): root = [root]
+        if isinstance(root, str): root = [root]
         if name:
             name = '{}.{}'.format(name.__module__, name.__class__.__name__).split('.')
             for k in root:
@@ -104,7 +104,7 @@ def get_logger(logger=None, root=['__main__', 'paging']):
             name.append(name_ext)
             if name_ext[0].isupper(): name.append('core')
         logger = '.'.join(name)
-    if isinstance(logger, types.StringTypes):
+    if isinstance(logger, str):
         logger = logging.getLogger(logger)
     return logger
 
@@ -119,7 +119,7 @@ def suppress_streams(*streams):
             os.dup2(fd_null, fd)
             setattr(sys, k, stream_null)
         yield
-        for k, (fd, fd_bak, stream) in replaced.viewitems():
+        for k, (fd, fd_bak, stream) in replaced.items():
             stream.flush()
             stream_base = getattr(sys, '__{}__'.format(k))
             if stream_base is not stream: stream_base.flush()
@@ -132,18 +132,18 @@ def force_bytes(bytes_or_unicode, encoding='utf-8', errors='backslashreplace'):
     return bytes_or_unicode.encode(encoding, errors)
 
 def force_unicode(bytes_or_unicode, encoding='utf-8', errors='replace'):
-    if isinstance(bytes_or_unicode, unicode): return bytes_or_unicode
+    if isinstance(bytes_or_unicode, str): return bytes_or_unicode
     return bytes_or_unicode.decode(encoding, errors)
 
 def force_str_type(bytes_or_unicode, val_or_type, **conv_kws):
     if val_or_type is bytes or isinstance(val_or_type, bytes): f = force_bytes
-    elif val_or_type is unicode or isinstance(val_or_type, unicode): f = force_unicode
+    elif val_or_type is str or isinstance(val_or_type, str): f = force_unicode
     else: raise TypeError(val_or_type)
     return f(bytes_or_unicode, **conv_kws)
 
 
 def update_conf_from_file(conf, path_or_file, section='default', prefix=None):
-    if isinstance(path_or_file, types.StringTypes): path_or_file = open(path_or_file)
+    if isinstance(path_or_file, str): path_or_file = open(path_or_file)
     if isinstance(path_or_file, configparser.RawConfigParser): config = path_or_file
     else:
         with path_or_file as src:
@@ -156,10 +156,10 @@ def update_conf_from_file(conf, path_or_file, section='default', prefix=None):
         elif k.startswith('_'): continue
         else: conf_k = k
         v = getattr(conf, conf_k)
-        if isinstance(v, types.StringTypes):
+        if isinstance(v, str):
             get_val = lambda *a: force_str_type(config.get(*a), v)
         elif isinstance(v, bool): get_val = config.getboolean
-        elif isinstance(v, (int, long)): get_val = config.getint
+        elif isinstance(v, int): get_val = config.getint
         elif isinstance(v, float): get_val = lambda *a: float(config.get(*a))
         else: continue # values with other types cannot be specified in config
         for k_conf in k, k.replace('_', '-'):
@@ -203,7 +203,7 @@ def ffmpeg_towav(path=None, block=True, max_len=None, tmp_dir=None):
         self.init, self.procs, self.log = True, dict(), get_logger()
         self.tmp_dir = tempfile.mkdtemp(prefix='ffmpeg_towav.{}.'.format(os.getpid()))
         def proc_gc(sig, frm):
-            for p,proc in self.procs.items():
+            for p,proc in list(self.procs.items()):
                 if p and proc and proc.poll() is not None:
                     pid, err = proc.pid, proc.wait()
                     if err != 0:
@@ -211,10 +211,10 @@ def ffmpeg_towav(path=None, block=True, max_len=None, tmp_dir=None):
                             ' pid (%s) has exited with error: %s', pid, err )
                     self.procs[p] = None
         def files_cleanup():
-            file_dirs, procs = set(), self.procs.items()
+            file_dirs, procs = set(), list(self.procs.items())
             self.log.debug(
                 'ffmpeg cleanup (%s pid(s), %s tmp file(s))',
-                len(filter(all, procs)), len(procs) )
+                len(list(filter(all, procs))), len(procs) )
             for p, proc in procs:
                 if p and proc and proc.poll() is not None: proc.kill()
                 try: os.unlink(p)
@@ -242,10 +242,10 @@ def ffmpeg_towav(path=None, block=True, max_len=None, tmp_dir=None):
     if block:
         self.log.debug(
             'Waiting for %s ffmpeg pid(s) to finish conversion',
-            len(filter(None, self.procs.values())) )
+            len([_f for _f in list(self.procs.values()) if _f]) )
         if proc: proc.wait()
         else:
-            procs = self.procs.items()
+            procs = list(self.procs.items())
             if isinstance(block, (set, frozenset, list, tuple)):
                 procs = list((p,proc) for p,proc in procs if p in block)
             for p, proc in procs: proc.wait()
@@ -370,7 +370,7 @@ class PSCallState(PSCallbacks):
         self.cbs = call.pj.CallCallback(call)
         self.acc, self.call_id, self.call = acc, call_id, call
         self.pj_media_states = dict(
-            (v, k.lower()) for k,v in vars(call.pj.MediaState).viewitems() )
+            (v, k.lower()) for k,v in vars(call.pj.MediaState).items() )
         self.log = get_logger()
 
         ci = self.call.info()
@@ -422,10 +422,10 @@ class PulseClient(object):
             PulseIndexError, PulseError, PulseLoopStop
         self.log = get_logger()
 
-        self.volume = dict(zip(['music', 'klaxon', 'call'], it.repeat(-1)))
+        self.volume = dict(list(zip(['music', 'klaxon', 'call'], it.repeat(-1))))
         self.volume.update(volume or dict())
         self.fade = dict((t, dict(duration=0, offset=0, min=0, steps=25)) for t in ['in', 'out'])
-        for t, v in self.fade.viewitems(): v.update((fade or dict()).get(t) or dict())
+        for t, v in self.fade.items(): v.update((fade or dict()).get(t) or dict())
 
     def init(self):
         self.pulse = self._connect('paging-server')
@@ -460,7 +460,7 @@ class PulseClient(object):
     def _match_music_si(self, si=None):
         idx, si = (si, self.pulse.sink_input_info(si))\
             if not isinstance(si, self._si_t) else (si.index, si)
-        for k, v in si.proplist.viewitems():
+        for k, v in si.proplist.items():
             v = '{}={}'.format(k, v)
             m = re.search(self.si_filter_regexp, v)
             if self.si_filter_debug:
@@ -472,7 +472,7 @@ class PulseClient(object):
     def _process_changes(self):
         wakeups = list()
 
-        for k in self.changes.keys():
+        for k in list(self.changes.keys()):
             c = self.changes[k]
             try: wakeup = next(c)
             except StopIteration: del self.changes[k]
@@ -532,7 +532,7 @@ class PulseClient(object):
             return
 
         ts_start = mono_time() + s['offset']
-        si_list = filter(self._match_music_si, self.pulse.sink_input_list())
+        si_list = list(filter(self._match_music_si, self.pulse.sink_input_list()))
         v_si_min, v_si_max = dict(), dict()
         if t == 'out':
             v_si_max.update(
@@ -550,10 +550,10 @@ class PulseClient(object):
                     try: self.pulse.volume_set_all_chans(si, v_si_min[si.index])
                     except self.PulseIndexError: pass
             self.set_music_mute()
-        v_si_len = len(set(v_si_max.keys() + v_si_min.keys()))
+        v_si_len = len(set(list(v_si_max.keys()) + list(v_si_min.keys())))
 
         self.log.debug('Starting music fade-%s for %s pulse stream(s)', t, v_si_len)
-        for n in xrange(1, s['steps']+1):
+        for n in range(1, s['steps']+1):
             ts_step = ts_start + (s['duration'] * (n / float(s['steps'])))
             while True:
                 ts = mono_time()
@@ -622,12 +622,12 @@ class PagingServer(object):
             try: infos = [infos[int(spec)]]
             except KeyError:
                 self.log.error( 'Failed to find %s with id=%s,'
-                    ' available: %s', kind, spec, ', '.join(map(bytes, infos.keys())) )
+                    ' available: %s', kind, spec, ', '.join(map(bytes, list(infos.keys()))) )
                 infos = list()
         else:
             info_re = re.compile(spec, re.I)
             infos_match, infos_left = list(), list()
-            for info in infos.viewvalues():
+            for info in infos.values():
                 dst_list = infos_match if info_re.search(info['name']) else infos_left
                 dst_list.append(info)
         if len(infos_match) != 1:
@@ -673,7 +673,7 @@ class PagingServer(object):
         conf_fade= dict( (t, dict(
             (k, getattr(self.conf, 'audio_music_fade_{}_{}'.format(t, k)))
             for k in ['duration', 'offset', 'min'] )) for t in ['in', 'out'] )
-        for t, v in conf_fade.viewitems(): v['min'] /= 100.0
+        for t, v in conf_fade.items(): v['min'] /= 100.0
         self.pulse = PulseClient(
             volume=conf_volume, fade=conf_fade,
             si_filter_regexp=self.conf.audio_pulse_match,
@@ -731,7 +731,7 @@ class PagingServer(object):
         lock = self.pulse and self.running is not False
         if lock:
             with self._poll_hold:
-                for n in xrange(int(loop_wait / loop_interval)):
+                for n in range(int(loop_wait / loop_interval)):
                     # wakeup only works when loop is actually started,
                     #  which might not be the case regardless of any locks.
                     self.pulse.poll_wakeup()
@@ -802,7 +802,7 @@ class PagingServer(object):
         assert self.lib, 'Must be initialized before run()'
         self.init_outputs()
 
-        domain, user, pw = map(ft.partial(self.conf.get, 'sip'), ['domain', 'user', 'pass'])
+        domain, user, pw = list(map(ft.partial(self.conf.get, 'sip'), ['domain', 'user', 'pass']))
         if not domain or domain == '<sip server>':
             raise PagingServerError( 'SIP account credentials'
                 ' (domain, user, password) were not configured, refusing to start' )
@@ -878,11 +878,11 @@ def pprint_infos(infos, title=None, pre=None, buff=None):
         p('{}:'.format(title))
         if pre is None: pre = ' '*2
     pre = pre or ''
-    if isinstance(infos, dict): infos = infos.values()
+    if isinstance(infos, dict): infos = list(infos.values())
     for info in infos:
         info_id = '[{}] '.format(info['id']) if 'id' in info else ''
         p('{}{}{}'.format(pre, info_id, info['name']))
-        for k, v in sorted(info.viewitems()):
+        for k, v in sorted(info.items()):
             if k in ['id', 'name']: continue
             p('{}  {}: {}'.format(pre, k, v))
 
@@ -964,7 +964,7 @@ def main(args=None, defaults=None):
         return
 
     conf_file = configparser.SafeConfigParser(allow_no_value=True)
-    conf_user_paths = map(expanduser, opts.conf or list())
+    conf_user_paths = list(map(expanduser, opts.conf or list()))
     for p in conf_user_paths:
         if not os.access(p, os.O_RDONLY):
             parser.error('Specified config file does not exists: {}'.format(p))
